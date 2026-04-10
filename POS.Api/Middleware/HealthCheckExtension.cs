@@ -1,6 +1,4 @@
-﻿using Newtonsoft.Json;
-using POS.Application.Commons.Config;
-using POS.Application.Interfaces.Services;
+﻿using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace POS.Api.Middleware;
 
@@ -8,27 +6,30 @@ public static class HealthCheckExtension
 {
     private static readonly string[] DatabaseTags = { "database" };
 
-    public static IServiceCollection AddHealthCheck(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddHealthCheck(
+        this IServiceCollection services,
+        IConfiguration configuration)
     {
-        var serviceProvider = services.BuildServiceProvider();
-        var vaultSecretService = serviceProvider.GetRequiredService<IVaultSecretService>();
+        var connectionString = configuration.GetConnectionString("DefaultConnection");
 
-        var secretJson = vaultSecretService.GetSecret("CustomCodeAPI/data/ConnectionStrings").GetAwaiter().GetResult();
-        var secretResponse = JsonConvert.DeserializeObject<SecretResponse<ConnectionStringsConfig>>(secretJson);
-
-        if (secretResponse?.Data?.Data == null || string.IsNullOrEmpty(secretResponse.Data.Data.Connection))
+        if (string.IsNullOrWhiteSpace(connectionString))
         {
-            throw new Exception("No se pudo obtener la cadena de conexión desde Vault.");
+            throw new Exception("Connection string 'DefaultConnection' is not configured.");
         }
-
-        var connectionString = secretResponse.Data.Data.Connection;
 
         services.AddHealthChecks()
             .AddNpgSql(
                 connectionString,
+                name: "postgresql",
+                failureStatus: HealthStatus.Unhealthy,
                 tags: DatabaseTags);
 
-        services.AddHealthChecksUI()
+        services.AddHealthChecksUI(setupSettings =>
+            {
+                setupSettings.SetEvaluationTimeInSeconds(5);
+                setupSettings.MaximumHistoryEntriesPerEndpoint(50);
+                setupSettings.AddHealthCheckEndpoint("Product Microservice health check", "/health");
+            })
             .AddInMemoryStorage();
 
         return services;

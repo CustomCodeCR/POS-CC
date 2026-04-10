@@ -1,12 +1,11 @@
-﻿using Microsoft.IdentityModel.Tokens;
-using POS.Application.Interfaces.Authentication;
-using POS.Domain.Entities;
-using System.IdentityModel.Tokens.Jwt;
+﻿using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
-using Newtonsoft.Json;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 using POS.Application.Commons.Config;
-using POS.Application.Interfaces.Services;
+using POS.Application.Interfaces.Authentication;
+using POS.Domain.Entities;
 
 namespace POS.Infrastructure.Authentication;
 
@@ -14,41 +13,39 @@ public class JwtTokenGenerator : IJwtTokenGenerator
 {
     private readonly JwtSettings _jwtSettings;
 
-    public JwtTokenGenerator(IVaultSecretService vaultSecretService)
+    public JwtTokenGenerator(IOptions<JwtSettings> jwtOptions)
     {
-        var secretJson = vaultSecretService.GetSecret("CustomCodeAPI/data/Jwt").GetAwaiter().GetResult();
-        var secretResponse = JsonConvert.DeserializeObject<SecretResponse<JwtSettings>>(secretJson);
+        _jwtSettings = jwtOptions.Value;
 
-        if (secretResponse?.Data?.Data == null)
+        if (string.IsNullOrWhiteSpace(_jwtSettings.Secret))
         {
-            throw new Exception("Failed to retrieve secrets from Vault.");
+            throw new Exception("JwtSettings:Secret is not configured.");
         }
-
-        _jwtSettings = secretResponse.Data.Data;
     }
 
     public string GenerateToken(User user)
     {
         var signingCredentials = new SigningCredentials(
-            new SymmetricSecurityKey(
-                Encoding.UTF8.GetBytes(_jwtSettings.Secret)),
-            SecurityAlgorithms.HmacSha256);
+            new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtSettings.Secret)),
+            SecurityAlgorithms.HmacSha256
+        );
 
         var claims = new[]
         {
             new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()!),
-            new Claim(JwtRegisteredClaimNames.GivenName, user.UserName!),
+            new Claim(JwtRegisteredClaimNames.GivenName, user.UserName ?? string.Empty),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
         };
 
         var securityToken = new JwtSecurityToken(
             issuer: _jwtSettings.Issuer,
             audience: _jwtSettings.Audience,
-            expires: DateTime.UtcNow.AddHours(_jwtSettings.ExpiryHours),
             claims: claims,
+            expires: DateTime.UtcNow.AddHours(_jwtSettings.ExpiryHours),
             signingCredentials: signingCredentials
         );
 
         return new JwtSecurityTokenHandler().WriteToken(securityToken);
     }
 }
+

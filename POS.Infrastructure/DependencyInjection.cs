@@ -3,7 +3,6 @@ using DinkToPdf.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Newtonsoft.Json;
 using POS.Application.Commons.Config;
 using POS.Application.Interfaces.Authentication;
 using POS.Application.Interfaces.Persistence;
@@ -17,20 +16,23 @@ namespace POS.Infrastructure;
 
 public static class DependencyInjection
 {
-    public static IServiceCollection AddInfrastructure(this IServiceCollection services, ConfigurationManager configuration)
+    public static IServiceCollection AddInfrastructure(
+        this IServiceCollection services,
+        ConfigurationManager configuration
+    )
     {
-        var serviceProvider = services.BuildServiceProvider();
-        var secretService = serviceProvider.GetRequiredService<IVaultSecretService>();
+        var connectionString = configuration.GetConnectionString("DefaultConnection");
 
-        var secretJson = secretService.GetSecret("CustomCodeAPI/data/ConnectionStrings").GetAwaiter().GetResult();
-        var SecretResponse = JsonConvert.DeserializeObject<SecretResponse<ConnectionStringsConfig>>(secretJson);
-        var Config = SecretResponse?.Data?.Data;
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            throw new Exception("Connection string 'DefaultConnection' is not configured.");
+        }
 
         var assembly = typeof(ApplicationDbContext).Assembly.FullName;
 
-        services.AddDbContext<ApplicationDbContext>(
-                options => options.UseNpgsql(Config!.Connection,
-                b => b.MigrationsAssembly(assembly)));
+        services.AddDbContext<ApplicationDbContext>(options =>
+            options.UseNpgsql(connectionString, b => b.MigrationsAssembly(assembly))
+        );
 
         services.AddScoped(typeof(IGenericRepository<>), typeof(GenericRepository<>));
         services.AddScoped<IPurchaseDetailRepository, PurchaseDetailRepository>();
@@ -52,8 +54,9 @@ public static class DependencyInjection
 
         services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
 
-        services.AddSingleton<IConverter, SynchronizedConverter>(provider =>
-            new SynchronizedConverter(new PdfTools()));
+        services.AddSingleton<IConverter, SynchronizedConverter>(_ => new SynchronizedConverter(
+            new PdfTools()
+        ));
 
         return services;
     }

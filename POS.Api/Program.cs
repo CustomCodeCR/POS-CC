@@ -10,11 +10,11 @@ using WatchDog;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-builder.Services.AddSingleton<IVaultSecretService, VaultSecretService>();
+//uilder.Services.AddSingleton<IVaultSecretService, VaultSecretService>();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddHealthCheck(builder.Configuration);
-builder.Services.AddAuthentication(builder.Configuration);
+builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddSwagger(builder.Configuration);
 builder.Services.AddWatchDog();
 
